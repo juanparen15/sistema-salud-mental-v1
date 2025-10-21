@@ -1,72 +1,108 @@
 <?php
 
-// app/Policies/MonthlyFollowupPolicy.php
 namespace App\Policies;
 
 use App\Models\User;
 use App\Models\MonthlyFollowup;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
 class MonthlyFollowupPolicy
 {
+    use HandlesAuthorization;
+
+    /**
+     * Determine whether the user can view any models.
+     */
     public function viewAny(User $user): bool
     {
-        return $user->can('view_followups') ||
-            $user->can('view_any_followups') ||
-            $user->can('view_all_followups');
+        return $user->can('view_any_monthly::followup');
     }
 
-    public function view(User $user, MonthlyFollowup $followup): bool
+    /**
+     * Determine whether the user can view the model.
+     */
+    public function view(User $user, MonthlyFollowup $monthlyFollowup): bool
     {
-        // Puede ver todos los seguimientos
-        if ($user->can('view_all_followups')) {
-            return true;
-        }
-
-        // Puede ver seguimientos de sus pacientes asignados
-        if ($user->can('view_any_followups')) {
-            return $this->belongsToAssignedPatient($user, $followup);
-        }
-
-        // Solo puede ver seguimientos creados por él
-        return $followup->performed_by === $user->id;
+        return $user->can('view_monthly::followup');
     }
 
+    /**
+     * Determine whether the user can create models.
+     */
     public function create(User $user): bool
     {
-        return $user->can('create_followups');
+        return $user->can('create_monthly::followup');
     }
 
-    public function update(User $user, MonthlyFollowup $followup): bool
+    /**
+     * Determine whether the user can update the model.
+     */
+    public function update(User $user, MonthlyFollowup $monthlyFollowup): bool
     {
-        // Puede editar todos los seguimientos
-        if ($user->can('edit_all_followups')) {
-            return true;
-        }
-
-        // Solo puede editar seguimientos creados por él
-        if ($user->can('edit_followups')) {
-            return $followup->performed_by === $user->id;
-        }
-
-        return false;
+        return $user->can('update_monthly::followup');
     }
 
-    public function delete(User $user, MonthlyFollowup $followup): bool
+    /**
+     * Determine whether the user can delete the model.
+     */
+    public function delete(User $user, MonthlyFollowup $monthlyFollowup): bool
     {
-        return $user->can('delete_followups');
+        return $user->can('delete_monthly::followup');
     }
 
-    public function export(User $user): bool
+    /**
+     * Determine whether the user can bulk delete.
+     */
+    public function deleteAny(User $user): bool
     {
-        return $user->can('export_followups');
+        return $user->can('delete_any_monthly::followup');
     }
 
-    private function belongsToAssignedPatient(User $user, MonthlyFollowup $followup): bool
+    /**
+     * Determine whether the user can permanently delete.
+     */
+    public function forceDelete(User $user, MonthlyFollowup $monthlyFollowup): bool
     {
-        if (!$followup->followupable || !$followup->followupable->patient) {
-            return false;
-        }
+        return $user->can('force_delete_monthly::followup');
+    }
 
-        return $followup->followupable->patient->assigned_to === $user->id;
+    /**
+     * Determine whether the user can permanently bulk delete.
+     */
+    public function forceDeleteAny(User $user): bool
+    {
+        return $user->can('force_delete_any_monthly::followup');
+    }
+
+    /**
+     * Determine whether the user can restore.
+     */
+    public function restore(User $user, MonthlyFollowup $monthlyFollowup): bool
+    {
+        return $user->can('restore_monthly::followup');
+    }
+
+    /**
+     * Determine whether the user can bulk restore.
+     */
+    public function restoreAny(User $user): bool
+    {
+        return $user->can('restore_any_monthly::followup');
+    }
+
+    /**
+     * Determine whether the user can replicate.
+     */
+    public function replicate(User $user, MonthlyFollowup $monthlyFollowup): bool
+    {
+        return $user->can('replicate_monthly::followup');
+    }
+
+    /**
+     * Determine whether the user can reorder.
+     */
+    public function reorder(User $user): bool
+    {
+        return $user->can('reorder_monthly::followup');
     }
 }

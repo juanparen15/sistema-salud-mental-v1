@@ -3,10 +3,10 @@
 namespace App\Policies;
 
 use App\Models\User;
-use App\Models\MentalDisorder;
+use App\Models\SubstanceConsumption;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
-class MentalDisorderPolicy
+class SubstanceConsumptionPolicy
 {
     use HandlesAuthorization;
 
@@ -15,15 +15,15 @@ class MentalDisorderPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->can('view_any_mental::disorder');
+        return $user->can('view_any_substance::consumption');
     }
 
     /**
      * Determine whether the user can view the model.
      */
-    public function view(User $user, MentalDisorder $mentalDisorder): bool
+    public function view(User $user, SubstanceConsumption $substanceConsumption): bool
     {
-        return $user->can('view_mental::disorder');
+        return $user->can('view_substance::consumption');
     }
 
     /**
@@ -31,23 +31,23 @@ class MentalDisorderPolicy
      */
     public function create(User $user): bool
     {
-        return $user->can('create_mental::disorder');
+        return $user->can('create_substance::consumption');
     }
 
     /**
      * Determine whether the user can update the model.
      */
-    public function update(User $user, MentalDisorder $mentalDisorder): bool
+    public function update(User $user, SubstanceConsumption $substanceConsumption): bool
     {
-        return $user->can('update_mental::disorder');
+        return $user->can('update_substance::consumption');
     }
 
     /**
      * Determine whether the user can delete the model.
      */
-    public function delete(User $user, MentalDisorder $mentalDisorder): bool
+    public function delete(User $user, SubstanceConsumption $substanceConsumption): bool
     {
-        return $user->can('delete_mental::disorder');
+        return $user->can('delete_substance::consumption');
     }
 
     /**
@@ -55,15 +55,15 @@ class MentalDisorderPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_mental::disorder');
+        return $user->can('delete_any_substance::consumption');
     }
 
     /**
      * Determine whether the user can permanently delete.
      */
-    public function forceDelete(User $user, MentalDisorder $mentalDisorder): bool
+    public function forceDelete(User $user, SubstanceConsumption $substanceConsumption): bool
     {
-        return $user->can('force_delete_mental::disorder');
+        return $user->can('force_delete_substance::consumption');
     }
 
     /**
@@ -71,15 +71,15 @@ class MentalDisorderPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_mental::disorder');
+        return $user->can('force_delete_any_substance::consumption');
     }
 
     /**
      * Determine whether the user can restore.
      */
-    public function restore(User $user, MentalDisorder $mentalDisorder): bool
+    public function restore(User $user, SubstanceConsumption $substanceConsumption): bool
     {
-        return $user->can('restore_mental::disorder');
+        return $user->can('restore_substance::consumption');
     }
 
     /**
@@ -87,15 +87,15 @@ class MentalDisorderPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_mental::disorder');
+        return $user->can('restore_any_substance::consumption');
     }
 
     /**
      * Determine whether the user can replicate.
      */
-    public function replicate(User $user, MentalDisorder $mentalDisorder): bool
+    public function replicate(User $user, SubstanceConsumption $substanceConsumption): bool
     {
-        return $user->can('replicate_mental::disorder');
+        return $user->can('replicate_substance::consumption');
     }
 
     /**
@@ -103,6 +103,6 @@ class MentalDisorderPolicy
      */
     public function reorder(User $user): bool
     {
-        return $user->can('reorder_mental::disorder');
+        return $user->can('reorder_substance::consumption');
     }
 }

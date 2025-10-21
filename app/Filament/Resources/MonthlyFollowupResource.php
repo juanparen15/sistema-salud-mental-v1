@@ -16,9 +16,6 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Actions\BulkActionGroup;
-use Filament\Tables\Actions\DeleteBulkAction;
-use Illuminate\Support\Str;
 
 class MonthlyFollowupResource extends Resource
 {
@@ -30,6 +27,9 @@ class MonthlyFollowupResource extends Resource
     protected static ?string $navigationGroup = 'Gestión de Pacientes';
     protected static ?int $navigationSort = 1;
 
+    // ============================================
+    // FORMULARIO
+    // ============================================
     public static function form(Form $form): Form
     {
         return $form
@@ -44,7 +44,7 @@ class MonthlyFollowupResource extends Resource
                                 SubstanceConsumption::class => 'Consumo SPA',
                             ])
                             ->required()
-                            ->reactive()
+                            ->live()
                             ->disabled(fn() => (bool)request()->query('source_type'))
                             ->default(function () {
                                 $sourceType = request()->query('source_type');
@@ -63,7 +63,6 @@ class MonthlyFollowupResource extends Resource
                                 $type = $get('followupable_type');
                                 if (!$type) return [];
 
-                                // ✅ Filtrar opciones según permisos
                                 $query = match ($type) {
                                     MentalDisorder::class => MentalDisorder::with('patient'),
                                     SuicideAttempt::class => SuicideAttempt::with('patient'),
@@ -73,12 +72,8 @@ class MonthlyFollowupResource extends Resource
 
                                 if (!$query) return [];
 
-                                // Aplicar filtros de permisos
-                                if (!auth()->user()->can('view_any_patients')) {
-                                    $query->whereHas('patient', function ($q) {
-                                        $q->where('assigned_to', auth()->id());
-                                    });
-                                }
+                                // Aplicar filtro de seguridad por usuario
+                                $query = static::applyUserScopeToQuery($query);
 
                                 return $query->get()->mapWithKeys(fn($case) => [
                                     $case->id => $case->patient->full_name . ' - ' . $case->patient->document_number
@@ -88,16 +83,14 @@ class MonthlyFollowupResource extends Resource
                             ->required()
                             ->columnSpanFull()
                             ->disabled(fn() => (bool)request()->query('source_id'))
-                            ->default(function () {
-                                return request()->query('source_id');
-                            })
+                            ->default(fn() => request()->query('source_id'))
                             ->placeholder('Primero selecciona el tipo de caso'),
 
                         Forms\Components\DatePicker::make('followup_date')
                             ->label('Fecha de Seguimiento')
                             ->required()
                             ->default(now())
-                            ->reactive()
+                            ->live()
                             ->afterStateUpdated(function ($state, $set) {
                                 if ($state) {
                                     $date = \Carbon\Carbon::parse($state);
@@ -152,6 +145,9 @@ class MonthlyFollowupResource extends Resource
             ->columns(1);
     }
 
+    // ============================================
+    // TABLA
+    // ============================================
     public static function table(Table $table): Table
     {
         return $table
@@ -177,140 +173,74 @@ class MonthlyFollowupResource extends Resource
                             }
                         );
                     })
-                    ->wrap(),
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        return $query->whereHasMorph(
+                            'followupable',
+                            [MentalDisorder::class, SuicideAttempt::class, SubstanceConsumption::class],
+                            function (Builder $q) use ($direction) {
+                                $q->join('patients', function ($join) {
+                                    $join->on('patients.id', '=', 
+                                        \DB::raw("CASE 
+                                            WHEN followupables.followupable_type = '" . MentalDisorder::class . "' THEN mental_disorders.patient_id
+                                            WHEN followupables.followupable_type = '" . SuicideAttempt::class . "' THEN suicide_attempts.patient_id
+                                            WHEN followupables.followupable_type = '" . SubstanceConsumption::class . "' THEN substance_consumptions.patient_id
+                                        END")
+                                    );
+                                })->orderBy('patients.full_name', $direction);
+                            }
+                        );
+                    }),
 
-                Tables\Columns\BadgeColumn::make('case_type')
-                    ->label('Tipo de Caso')
-                    ->formatStateUsing(function ($record) {
-                        return match ($record->followupable_type) {
-                            MentalDisorder::class => 'Trastorno Mental',
-                            SuicideAttempt::class => 'Intento Suicidio',
-                            SubstanceConsumption::class => 'Consumo SPA',
-                            default => 'Desconocido'
-                        };
+                Tables\Columns\TextColumn::make('followupable_type')
+                    ->label('Tipo')
+                    ->badge()
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                        MentalDisorder::class => 'Trastorno Mental',
+                        SuicideAttempt::class => 'Intento Suicidio',
+                        SubstanceConsumption::class => 'Consumo SPA',
+                        default => 'Otro'
                     })
-                    ->colors([
-                        'primary' => MentalDisorder::class,
-                        'danger' => SuicideAttempt::class,
-                        'warning' => SubstanceConsumption::class,
-                        'gray' => fn($state) => $state === 'Desconocido',
-                    ])
-                    ->icons([
-                        'heroicon-o-heart' => MentalDisorder::class,
-                        'heroicon-o-exclamation-triangle' => SuicideAttempt::class,
-                        'heroicon-o-beaker' => SubstanceConsumption::class,
-                    ]),
-
-                Tables\Columns\TextColumn::make('case_details')
-                    ->label('Detalles del Caso')
-                    ->formatStateUsing(function ($record) {
-                        if (!$record->followupable) return 'N/A';
-
-                        return match ($record->followupable_type) {
-                            MentalDisorder::class => ($record->followupable->diagnosis_code ?? 'Sin código') . ' - ' .
-                                Str::limit($record->followupable->diagnosis_description ?? 'Sin descripción', 40),
-                            SuicideAttempt::class =>
-                            'Intento #' . ($record->followupable->attempt_number ?? '1') . ' - ' .
-                                Str::limit($record->followupable->mechanism ?? 'Sin mecanismo', 40),
-                            SubstanceConsumption::class =>
-                            'Nivel: ' . ($record->followupable->consumption_level ?? 'N/A') . ' - ' .
-                                Str::limit($record->followupable->diagnosis ?? 'Sin diagnóstico', 40),
-                            default => 'N/A'
-                        };
-                    })
-                    ->wrap()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->color(fn(string $state): string => match ($state) {
+                        MentalDisorder::class => 'info',
+                        SuicideAttempt::class => 'danger',
+                        SubstanceConsumption::class => 'warning',
+                        default => 'gray'
+                    }),
 
                 Tables\Columns\TextColumn::make('followup_date')
-                    ->label('Fecha Seguimiento')
+                    ->label('Fecha')
                     ->date('d/m/Y')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('year')
-                    ->label('Año')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                Tables\Columns\TextColumn::make('month')
-                    ->label('Mes')
-                    ->sortable()
-                    ->formatStateUsing(fn($state) => match ((int)$state) {
-                        1 => 'Enero',
-                        2 => 'Febrero',
-                        3 => 'Marzo',
-                        4 => 'Abril',
-                        5 => 'Mayo',
-                        6 => 'Junio',
-                        7 => 'Julio',
-                        8 => 'Agosto',
-                        9 => 'Septiembre',
-                        10 => 'Octubre',
-                        11 => 'Noviembre',
-                        12 => 'Diciembre',
-                        default => $state
-                    })
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                Tables\Columns\BadgeColumn::make('status')
+                Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
-                    ->colors([
-                        'success' => 'completed',
-                        'warning' => 'pending',
-                        'danger' => 'not_contacted',
-                        'secondary' => 'refused',
-                    ])
+                    ->badge()
                     ->formatStateUsing(fn(string $state): string => match ($state) {
-                        'completed' => 'Completado',
                         'pending' => 'Pendiente',
+                        'completed' => 'Completado',
                         'not_contacted' => 'No Contactado',
                         'refused' => 'Rechazado',
-                        default => ucfirst($state),
+                        default => $state
+                    })
+                    ->color(fn(string $state): string => match ($state) {
+                        'completed' => 'success',
+                        'pending' => 'warning',
+                        'not_contacted' => 'info',
+                        'refused' => 'danger',
+                        default => 'gray'
                     }),
 
-                Tables\Columns\TextColumn::make('description')
-                    ->label('Descripción')
-                    ->limit(50)
-                    ->wrap()
-                    ->tooltip(fn($record) => $record->description),
-
-                Tables\Columns\TextColumn::make('actions_taken')
-                    ->label('Acciones')
-                    ->formatStateUsing(function ($state) {
-                        if (is_array($state)) {
-                            return implode(', ', $state);
-                        }
-                        return $state ?: 'Sin acciones';
-                    })
-                    ->limit(30)
-                    ->tooltip(function ($record) {
-                        if (is_array($record->actions_taken)) {
-                            return "• " . implode("\n• ", $record->actions_taken);
-                        }
-                        return $record->actions_taken;
-                    })
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('user.name')
+                    ->label('Realizado por')
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('next_followup')
                     ->label('Próximo')
                     ->date('d/m/Y')
+                    ->placeholder('No programado')
                     ->sortable()
-                    ->color(function ($state) {
-                        if (!$state) return 'gray';
-                        return $state < now() ? 'danger' : 'success';
-                    })
-                    ->formatStateUsing(function ($state) {
-                        if (!$state) return 'No programado';
-                        $color = $state < now() ? '🔴' : '🟢';
-                        return $color . ' ' . $state->format('d/m/Y');
-                    }),
-
-                Tables\Columns\TextColumn::make('performed_by_name')
-                    ->label('Registrado por')
-                    ->formatStateUsing(function ($record) {
-                        return $record->user ? $record->user->name : 'N/A';
-                    })
-                    ->sortable(false)
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
@@ -323,132 +253,58 @@ class MonthlyFollowupResource extends Resource
                     ->label('Tipo de Caso')
                     ->options([
                         MentalDisorder::class => 'Trastorno Mental',
-                        SuicideAttempt::class => 'Intento Suicidio',
+                        SuicideAttempt::class => 'Intento de Suicidio',
                         SubstanceConsumption::class => 'Consumo SPA',
                     ]),
-
-                SelectFilter::make('patient')
-                    ->label('Paciente')
-                    ->options(function () {
-                        $query = Patient::query();
-
-                        // ✅ Filtrar pacientes según permisos
-                        if (!auth()->user()->can('view_any_patients')) {
-                            $query->where('assigned_to', auth()->id());
-                        }
-
-                        return $query->get()->mapWithKeys(function ($patient) {
-                            return [$patient->id => $patient->full_name . ' - ' . $patient->document_number];
-                        });
-                    })
-                    ->searchable()
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query->when($data['value'], function (Builder $query) use ($data) {
-                            $query->whereHasMorph(
-                                'followupable',
-                                [MentalDisorder::class, SuicideAttempt::class, SubstanceConsumption::class],
-                                function (Builder $q) use ($data) {
-                                    $q->where('patient_id', $data['value']);
-                                }
-                            );
-                        });
-                    }),
 
                 SelectFilter::make('status')
                     ->label('Estado')
                     ->options([
-                        'completed' => 'Completado',
                         'pending' => 'Pendiente',
+                        'completed' => 'Completado',
                         'not_contacted' => 'No Contactado',
                         'refused' => 'Rechazado',
                     ]),
 
-                SelectFilter::make('year')
-                    ->label('Año')
-                    ->options([
-                        2024 => '2024',
-                        2025 => '2025',
-                        2026 => '2026',
+                Tables\Filters\Filter::make('followup_date')
+                    ->form([
+                        Forms\Components\DatePicker::make('from')
+                            ->label('Desde'),
+                        Forms\Components\DatePicker::make('until')
+                            ->label('Hasta'),
                     ])
-                    ->default(2025),
-
-                SelectFilter::make('month')
-                    ->label('Mes')
-                    ->options([
-                        1 => 'Enero',
-                        2 => 'Febrero',
-                        3 => 'Marzo',
-                        4 => 'Abril',
-                        5 => 'Mayo',
-                        6 => 'Junio',
-                        7 => 'Julio',
-                        8 => 'Agosto',
-                        9 => 'Septiembre',
-                        10 => 'Octubre',
-                        11 => 'Noviembre',
-                        12 => 'Diciembre',
-                    ]),
-
-                Tables\Filters\Filter::make('overdue_followups')
-                    ->label('Seguimientos Vencidos')
-                    ->query(
-                        fn(Builder $query): Builder =>
-                        $query->where('next_followup', '<', now())
-                            ->whereNotNull('next_followup')
-                    ),
-
-                Tables\Filters\Filter::make('recent')
-                    ->label('Recientes (30 días)')
-                    ->query(
-                        fn(Builder $query): Builder =>
-                        $query->where('followup_date', '>=', now()->subDays(30))
-                    ),
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'], fn(Builder $query, $date) => 
+                                $query->whereDate('followup_date', '>=', $date)
+                            )
+                            ->when($data['until'], fn(Builder $query, $date) => 
+                                $query->whereDate('followup_date', '<=', $date)
+                            );
+                    }),
 
                 Tables\Filters\Filter::make('my_followups')
                     ->label('Mis Seguimientos')
-                    ->query(
-                        fn(Builder $query): Builder =>
-                        $query->where('performed_by', auth()->id())
-                    ),
+                    ->query(fn(Builder $query) => $query->where('performed_by', auth()->id()))
+                    ->toggle(),
+
+                Tables\Filters\Filter::make('pending_only')
+                    ->label('Solo Pendientes')
+                    ->query(fn(Builder $query) => $query->where('status', 'pending'))
+                    ->toggle(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->visible(
-                        fn($record) => ($record->performed_by === auth()->id())
-                    ),
+                Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
-
-                // ✅ Acción para programar próximo seguimiento
-                Tables\Actions\Action::make('schedule_next')
-                    ->label('Programar Próximo')
-                    ->icon('heroicon-o-clock')
-                    ->color('info')
-                    ->form([
-                        Forms\Components\DatePicker::make('next_followup')
-                            ->label('Fecha del Próximo Seguimiento')
-                            ->required()
-                            ->minDate(now()),
-                    ])
-                    ->action(function ($record, array $data) {
-                        $record->update(['next_followup' => $data['next_followup']]);
-
-                        Notification::make()
-                            ->title('Próximo seguimiento programado')
-                            ->success()
-                            ->send();
-                    })
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
-                    Tables\Actions\ExportBulkAction::make(),
 
-                    // ✅ Acción masiva para cambiar estado
-                    Tables\Actions\BulkAction::make('change_status')
+                    Tables\Actions\BulkAction::make('update_status')
                         ->label('Cambiar Estado')
-                        ->icon('heroicon-o-pencil-square')
-                        ->color('warning')
+                        ->icon('heroicon-o-arrow-path')
                         ->form([
                             Forms\Components\Select::make('status')
                                 ->label('Nuevo Estado')
@@ -463,8 +319,11 @@ class MonthlyFollowupResource extends Resource
                         ->action(function (array $data, $records) {
                             $count = 0;
                             foreach ($records as $record) {
-                                $record->update(['status' => $data['status']]);
-                                $count++;
+                                // Verificar permisos antes de actualizar
+                                if (static::canEdit($record)) {
+                                    $record->update(['status' => $data['status']]);
+                                    $count++;
+                                }
                             }
 
                             Notification::make()
@@ -475,9 +334,6 @@ class MonthlyFollowupResource extends Resource
                 ]),
             ])
             ->headerActions([
-                Tables\Actions\ExportAction::make(),
-
-                // ✅ Acción para crear seguimiento rápido
                 Tables\Actions\Action::make('quick_create')
                     ->label('Seguimiento Rápido')
                     ->icon('heroicon-o-plus-circle')
@@ -488,7 +344,8 @@ class MonthlyFollowupResource extends Resource
                             ->options(function () {
                                 $query = Patient::query();
 
-                                if (!auth()->user()->can('view_any_patients')) {
+                                // Aplicar scope de usuario
+                                if (!auth()->user()->can('view_any_monthly::followup')) {
                                     $query->where('assigned_to', auth()->id());
                                 }
 
@@ -519,45 +376,88 @@ class MonthlyFollowupResource extends Resource
                             ->title('Seguimiento rápido creado')
                             ->success()
                             ->send();
-                    }),
+                    })
+                    ->visible(fn() => auth()->user()->can('create_monthly::followup')),
             ])
             ->defaultSort('followup_date', 'desc')
             ->striped()
             ->paginated([10, 25, 50, 100]);
     }
 
-    // ✅ Filtrar registros según permisos del usuario
+    // ============================================
+    // QUERY SCOPE - CONTROL DE ACCESO
+    // ============================================
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
-            ->with([
-                'followupable.patient',
-                'user'
-            ]);
+            ->with(['followupable.patient', 'user']);
 
-        // Control de acceso basado en permisos
-        // if (auth()->user()->can('view_all_followups')) {
-        //     // Puede ver todos los seguimientos
-        //     return $query;
-        // } elseif (auth()->user()->can('view_any_followups')) {
-        //     // Puede ver seguimientos relacionados con sus pacientes asignados
-        //     $query->whereHasMorph(
-        //         'followupable',
-        //         [MentalDisorder::class, SuicideAttempt::class, SubstanceConsumption::class],
-        //         function (Builder $q) {
-        //             $q->whereHas('patient', function (Builder $patientQuery) {
-        //                 $patientQuery->where('assigned_to', auth()->id());
-        //             });
-        //         }
-        //     );
-        // } else {
-        //     // Solo puede ver seguimientos creados por él
-        //     $query->where('performed_by', auth()->id());
-        // }
+        // Super Admin puede ver todo
+        if (auth()->user()->hasRole('super_admin')) {
+            return $query;
+        }
 
-        return $query;
+        // Si tiene permiso para ver todos los seguimientos
+        if (auth()->user()->can('view_any_monthly::followup')) {
+            return $query;
+        }
+
+        // Solo puede ver sus propios seguimientos
+        return $query->where('performed_by', auth()->id());
     }
 
+    // ============================================
+    // HELPER: APLICAR SCOPE A RELACIONES
+    // ============================================
+    protected static function applyUserScopeToQuery(Builder $query): Builder
+    {
+        // Super Admin ve todo
+        if (auth()->user()->hasRole('super_admin')) {
+            return $query;
+        }
+
+        // Si puede ver todos los pacientes, no aplicar filtro
+        if (auth()->user()->can('view_any_patient')) {
+            return $query;
+        }
+
+        // Solo puede ver casos de sus pacientes asignados
+        return $query->whereHas('patient', function (Builder $q) {
+            $q->where('assigned_to', auth()->id());
+        });
+    }
+
+    // ============================================
+    // NAVIGATION BADGE
+    // ============================================
+    public static function getNavigationBadge(): ?string
+    {
+        $query = static::getModel()::where('status', 'pending');
+
+        // Aplicar el mismo scope que getEloquentQuery
+        if (!auth()->user()->hasRole('super_admin')) {
+            if (!auth()->user()->can('view_any_monthly::followup')) {
+                $query->where('performed_by', auth()->id());
+            }
+        }
+
+        $count = $query->count();
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        $count = static::getNavigationBadge();
+        
+        if (!$count) return null;
+        if ((int) $count > 10) return 'danger';
+        if ((int) $count > 5) return 'warning';
+        return 'primary';
+    }
+
+    // ============================================
+    // PÁGINAS
+    // ============================================
     public static function getPages(): array
     {
         return [
@@ -566,43 +466,5 @@ class MonthlyFollowupResource extends Resource
             'edit' => Pages\EditMonthlyFollowup::route('/{record}/edit'),
             'view' => Pages\ViewMonthlyFollowup::route('/{record}'),
         ];
-    }
-
-    public static function getNavigationBadge(): ?string
-    {
-        $query = static::getModel()::where('status', 'pending');
-
-        // // ✅ Aplicar filtros de permisos también al badge
-        // if (!auth()->user()->can('view_all_followups')) {
-        //     if (auth()->user()->can('view_any_followups')) {
-        //         $query->whereHasMorph(
-        //             'followupable',
-        //             [MentalDisorder::class, SuicideAttempt::class, SubstanceConsumption::class],
-        //             function (Builder $q) {
-        //                 $q->whereHas('patient', function (Builder $patientQuery) {
-        //                     $patientQuery->where('assigned_to', auth()->id());
-        //                 });
-        //             }
-        //         );
-        //     } else {
-        //         $query->where('performed_by', auth()->id());
-        //     }
-        // }
-
-        return $query->count();
-    }
-
-    public static function getNavigationBadgeColor(): ?string
-    {
-        $pendingCount = static::getNavigationBadge();
-
-        if ($pendingCount > 10) return 'danger';
-        if ($pendingCount > 5) return 'warning';
-        return 'primary';
-    }
-
-    public static function shouldRegisterNavigation(): bool
-    {
-        return self::canViewAny();
     }
 }
