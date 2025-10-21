@@ -291,25 +291,20 @@ class PatientResource extends Resource
 
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->visible(fn() => auth()->user()->can('patients_view_own') || auth()->user()->can('patients_view_any')),
+                Tables\Actions\ViewAction::make(),
 
                 Tables\Actions\EditAction::make()
                     ->visible(function ($record) {
                         $user = auth()->user();
-                        return $user->can('patients_edit_any') ||
-                            ($user->can('patients_edit_own') && $record->assigned_to === $user->id);
+                        return ($record->assigned_to === $user->id);
                     }),
 
-                Tables\Actions\DeleteAction::make()
-                    ->visible(fn() => auth()->user()->can('patients_delete')),
+                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('patients_delete')),
-                    Tables\Actions\ExportBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('patients_export')),
+                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\ExportBulkAction::make(),
                 ]),
             ])
             // ->headerActions([
@@ -351,18 +346,6 @@ class PatientResource extends Resource
     public static function getNavigationBadge(): ?string
     {
         return static::getModel()::count();
-    }
-
-    public static function canViewAny(): bool
-    {
-        if (!auth()->check()) return false;
-        return auth()->user()->can('patients_view_own') || auth()->user()->can('patients_view_any');
-    }
-
-    public static function canCreate(): bool
-    {
-        if (!auth()->check()) return false;
-        return auth()->user()->can('patients_create');
     }
 
     public static function shouldRegisterNavigation(): bool

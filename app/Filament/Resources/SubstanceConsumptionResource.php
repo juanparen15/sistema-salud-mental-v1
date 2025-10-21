@@ -225,12 +225,9 @@ class SubstanceConsumptionResource extends Resource
                     }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->visible(fn() => auth()->user()->can('view_patients')),
-                Tables\Actions\EditAction::make()
-                    ->visible(fn() => auth()->user()->can('edit_patients')),
-                Tables\Actions\DeleteAction::make()
-                    ->visible(fn() => auth()->user()->can('delete_patients')),
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
                 Tables\Actions\Action::make('add_followup')
                     ->label('Añadir Seguimiento')
                     ->icon('heroicon-o-plus-circle')
@@ -240,14 +237,11 @@ class SubstanceConsumptionResource extends Resource
                         'source_type' => 'substance_consumption',
                         'source_id' => $record->id
                     ]))
-                    ->visible(fn() => auth()->user()->can('create_followups')),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('delete_patients')),
-                    Tables\Actions\ExportBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('export_patients')),
+                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\ExportBulkAction::make(),
                 ]),
             ])
             // ->headerActions([
@@ -292,22 +286,6 @@ class SubstanceConsumptionResource extends Resource
     public static function getNavigationBadgeColor(): ?string
     {
         return 'danger';
-    }
-
-    public static function canViewAny(): bool
-    {
-        if (!auth()->check()) return false;
-
-        // Solo roles especializados pueden ver consumo SPA
-        return auth()->user()->hasAnyRole(['super_admin', 'admin', 'coordinator', 'psychologist', 'social_worker']);
-    }
-
-    public static function canCreate(): bool
-    {
-        if (!auth()->check()) return false;
-
-        // Assistant NO puede registrar casos de SPA
-        return auth()->user()->hasAnyRole(['super_admin', 'admin', 'coordinator', 'psychologist', 'social_worker']);
     }
 
     public static function shouldRegisterNavigation(): bool

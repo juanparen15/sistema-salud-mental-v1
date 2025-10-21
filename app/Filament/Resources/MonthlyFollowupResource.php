@@ -409,20 +409,15 @@ class MonthlyFollowupResource extends Resource
                     ->query(
                         fn(Builder $query): Builder =>
                         $query->where('performed_by', auth()->id())
-                    )
-                    ->visible(fn() => auth()->user()->can('view_all_followups')), // Solo visible si puede ver todos
+                    ),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->visible(fn() => auth()->user()->can('view_followups')),
+                Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make()
                     ->visible(
-                        fn($record) =>
-                        auth()->user()->can('edit_all_followups') ||
-                            (auth()->user()->can('edit_followups') && $record->performed_by === auth()->id())
+                        fn($record) => ($record->performed_by === auth()->id())
                     ),
-                Tables\Actions\DeleteAction::make()
-                    ->visible(fn() => auth()->user()->can('delete_followups')),
+                Tables\Actions\DeleteAction::make(),
 
                 // ✅ Acción para programar próximo seguimiento
                 Tables\Actions\Action::make('schedule_next')
@@ -443,14 +438,11 @@ class MonthlyFollowupResource extends Resource
                             ->success()
                             ->send();
                     })
-                    ->visible(fn() => auth()->user()->can('edit_followups')),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('delete_followups')),
-                    Tables\Actions\ExportBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('export_followups')),
+                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\ExportBulkAction::make(),
 
                     // ✅ Acción masiva para cambiar estado
                     Tables\Actions\BulkAction::make('change_status')
@@ -471,27 +463,19 @@ class MonthlyFollowupResource extends Resource
                         ->action(function (array $data, $records) {
                             $count = 0;
                             foreach ($records as $record) {
-                                // Solo permitir editar si tiene permisos
-                                if (
-                                    auth()->user()->can('edit_all_followups') ||
-                                    (auth()->user()->can('edit_followups') && $record->performed_by === auth()->id())
-                                ) {
-                                    $record->update(['status' => $data['status']]);
-                                    $count++;
-                                }
+                                $record->update(['status' => $data['status']]);
+                                $count++;
                             }
 
                             Notification::make()
                                 ->title("Estado actualizado en {$count} seguimientos")
                                 ->success()
                                 ->send();
-                        })
-                        ->visible(fn() => auth()->user()->can('edit_followups')),
+                        }),
                 ]),
             ])
             ->headerActions([
-                Tables\Actions\ExportAction::make()
-                    ->visible(fn() => auth()->user()->can('export_followups')),
+                Tables\Actions\ExportAction::make(),
 
                 // ✅ Acción para crear seguimiento rápido
                 Tables\Actions\Action::make('quick_create')
@@ -535,8 +519,7 @@ class MonthlyFollowupResource extends Resource
                             ->title('Seguimiento rápido creado')
                             ->success()
                             ->send();
-                    })
-                    ->visible(fn() => auth()->user()->can('create_followups')),
+                    }),
             ])
             ->defaultSort('followup_date', 'desc')
             ->striped()
@@ -553,24 +536,24 @@ class MonthlyFollowupResource extends Resource
             ]);
 
         // Control de acceso basado en permisos
-        if (auth()->user()->can('view_all_followups')) {
-            // Puede ver todos los seguimientos
-            return $query;
-        } elseif (auth()->user()->can('view_any_followups')) {
-            // Puede ver seguimientos relacionados con sus pacientes asignados
-            $query->whereHasMorph(
-                'followupable',
-                [MentalDisorder::class, SuicideAttempt::class, SubstanceConsumption::class],
-                function (Builder $q) {
-                    $q->whereHas('patient', function (Builder $patientQuery) {
-                        $patientQuery->where('assigned_to', auth()->id());
-                    });
-                }
-            );
-        } else {
-            // Solo puede ver seguimientos creados por él
-            $query->where('performed_by', auth()->id());
-        }
+        // if (auth()->user()->can('view_all_followups')) {
+        //     // Puede ver todos los seguimientos
+        //     return $query;
+        // } elseif (auth()->user()->can('view_any_followups')) {
+        //     // Puede ver seguimientos relacionados con sus pacientes asignados
+        //     $query->whereHasMorph(
+        //         'followupable',
+        //         [MentalDisorder::class, SuicideAttempt::class, SubstanceConsumption::class],
+        //         function (Builder $q) {
+        //             $q->whereHas('patient', function (Builder $patientQuery) {
+        //                 $patientQuery->where('assigned_to', auth()->id());
+        //             });
+        //         }
+        //     );
+        // } else {
+        //     // Solo puede ver seguimientos creados por él
+        //     $query->where('performed_by', auth()->id());
+        // }
 
         return $query;
     }
@@ -589,22 +572,22 @@ class MonthlyFollowupResource extends Resource
     {
         $query = static::getModel()::where('status', 'pending');
 
-        // ✅ Aplicar filtros de permisos también al badge
-        if (!auth()->user()->can('view_all_followups')) {
-            if (auth()->user()->can('view_any_followups')) {
-                $query->whereHasMorph(
-                    'followupable',
-                    [MentalDisorder::class, SuicideAttempt::class, SubstanceConsumption::class],
-                    function (Builder $q) {
-                        $q->whereHas('patient', function (Builder $patientQuery) {
-                            $patientQuery->where('assigned_to', auth()->id());
-                        });
-                    }
-                );
-            } else {
-                $query->where('performed_by', auth()->id());
-            }
-        }
+        // // ✅ Aplicar filtros de permisos también al badge
+        // if (!auth()->user()->can('view_all_followups')) {
+        //     if (auth()->user()->can('view_any_followups')) {
+        //         $query->whereHasMorph(
+        //             'followupable',
+        //             [MentalDisorder::class, SuicideAttempt::class, SubstanceConsumption::class],
+        //             function (Builder $q) {
+        //                 $q->whereHas('patient', function (Builder $patientQuery) {
+        //                     $patientQuery->where('assigned_to', auth()->id());
+        //                 });
+        //             }
+        //         );
+        //     } else {
+        //         $query->where('performed_by', auth()->id());
+        //     }
+        // }
 
         return $query->count();
     }
@@ -616,22 +599,6 @@ class MonthlyFollowupResource extends Resource
         if ($pendingCount > 10) return 'danger';
         if ($pendingCount > 5) return 'warning';
         return 'primary';
-    }
-
-    public static function canViewAny(): bool
-    {
-        if (!auth()->check()) return false;
-
-        return auth()->user()->can('view_followups') ||
-            auth()->user()->can('view_any_followups') ||
-            auth()->user()->can('view_all_followups');
-    }
-
-    public static function canCreate(): bool
-    {
-        if (!auth()->check()) return false;
-
-        return auth()->user()->can('create_followups');
     }
 
     public static function shouldRegisterNavigation(): bool

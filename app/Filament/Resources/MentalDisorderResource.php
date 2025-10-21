@@ -216,12 +216,9 @@ class MentalDisorderResource extends Resource
                     ]),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->visible(fn() => auth()->user()->can('view_patients')),
-                Tables\Actions\EditAction::make()
-                    ->visible(fn() => auth()->user()->can('edit_patients')),
-                Tables\Actions\DeleteAction::make()
-                    ->visible(fn() => auth()->user()->can('delete_patients')),
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
                 Tables\Actions\Action::make('add_followup')
                     ->label('Añadir Seguimiento')
                     ->icon('heroicon-o-plus-circle')
@@ -231,14 +228,11 @@ class MentalDisorderResource extends Resource
                         'source_type' => 'mental_disorder',
                         'source_id' => $record->id
                     ]))
-                    ->visible(fn() => auth()->user()->can('create_followups')),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('delete_patients')),
-                    Tables\Actions\ExportBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('export_patients')),
+                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\ExportBulkAction::make(),
                 ]),
             ]);
     }
@@ -248,13 +242,9 @@ class MentalDisorderResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        // Si no puede ver todos los pacientes, aplicar filtros
-        if (!auth()->user()->can('view_any_patients')) {
-            // Solo puede ver casos relacionados con sus pacientes asignados
-            $query->whereHas('patient', function ($q) {
-                $q->where('assigned_to', auth()->id());
-            });
-        }
+        $query->whereHas('patient', function ($q) {
+            $q->where('assigned_to', auth()->id());
+        });
 
         return $query;
     }
@@ -277,23 +267,6 @@ class MentalDisorderResource extends Resource
     {
         return 'danger';
     }
-
-    public static function canViewAny(): bool
-    {
-        if (!auth()->check()) return false;
-
-        // Solo estos roles pueden ver trastornos mentales
-        return auth()->user()->hasAnyRole(['super_admin', 'admin', 'coordinator', 'psychologist', 'social_worker']);
-    }
-
-    public static function canCreate(): bool
-    {
-        if (!auth()->check()) return false;
-
-        // Assistant NO puede crear casos especializados
-        return auth()->user()->hasAnyRole(['super_admin', 'admin', 'coordinator', 'psychologist', 'social_worker']);
-    }
-
     public static function shouldRegisterNavigation(): bool
     {
         return self::canViewAny();

@@ -231,12 +231,9 @@ class SuicideAttemptResource extends Resource
                     ->query(fn(Builder $query): Builder => $query->where('event_date', '>=', now()->subDays(30))),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->visible(fn () => auth()->user()->can('view_patients')),
-                Tables\Actions\EditAction::make()
-                    ->visible(fn () => auth()->user()->can('edit_patients')),
-                Tables\Actions\DeleteAction::make()
-                    ->visible(fn () => auth()->user()->can('delete_patients')),
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
                 Tables\Actions\Action::make('add_followup')
                     ->label('Añadir Seguimiento')
                     ->icon('heroicon-o-plus-circle')
@@ -246,14 +243,11 @@ class SuicideAttemptResource extends Resource
                         'source_type' => 'suicide_attempt',
                         'source_id' => $record->id
                     ]))
-                    ->visible(fn () => auth()->user()->can('create_followups')),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn () => auth()->user()->can('delete_patients')),
+                    Tables\Actions\DeleteBulkAction::make(),
                     Tables\Actions\ExportBulkAction::make()
-                        ->visible(fn () => auth()->user()->can('export_patients')),
                 ]),
             ])
             // ->headerActions([
@@ -298,22 +292,6 @@ class SuicideAttemptResource extends Resource
     public static function getNavigationBadgeColor(): ?string
     {
         return 'danger';
-    }
-
-    public static function canViewAny(): bool
-    {
-        if (!auth()->check()) return false;
-        
-        // Solo roles especializados pueden ver intentos de suicidio
-        return auth()->user()->hasAnyRole(['super_admin', 'admin', 'coordinator', 'psychologist', 'social_worker']);
-    }
-
-    public static function canCreate(): bool
-    {
-        if (!auth()->check()) return false;
-        
-        // Assistant NO puede registrar casos de suicidio
-        return auth()->user()->hasAnyRole(['super_admin', 'admin', 'coordinator', 'psychologist', 'social_worker']);
     }
 
     public static function shouldRegisterNavigation(): bool
